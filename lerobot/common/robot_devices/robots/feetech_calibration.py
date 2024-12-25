@@ -436,6 +436,7 @@ def run_arm_manual_calibration(arm: MotorsBus, robot_type: str, arm_name: str, a
 
     # Compute homing offset so that `present_position + homing_offset ~= target_position`.
     zero_pos = arm.read("Present_Position")
+    print(zero_pos)
     homing_offset = zero_target_pos - zero_pos
 
     # The rotated target position corresponds to a rotation of a quarter turn from the zero position.
@@ -454,6 +455,7 @@ def run_arm_manual_calibration(arm: MotorsBus, robot_type: str, arm_name: str, a
     # Find drive mode by rotating each motor by a quarter of a turn.
     # Drive mode indicates if the motor rotation direction should be inverted (=1) or not (=0).
     rotated_pos = arm.read("Present_Position")
+    print(rotated_pos)
     drive_mode = (rotated_pos < zero_pos).astype(np.int32)
 
     # Re-compute homing offset to take into account drive mode

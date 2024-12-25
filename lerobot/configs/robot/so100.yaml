@@ -45,7 +45,7 @@ cameras:
   top:
     _target_: lerobot.common.robot_devices.cameras.intelrealsense.IntelRealSenseCamera
     # name: Intel RealSense D435I
-    serial_number: 134523064813
+    serial_number: 135122074394
     fps: 30
     width: 640
     height: 480
