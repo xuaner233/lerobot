@@ -94,16 +94,20 @@ def make_dataset(cfg, split: str = "train") -> LeRobotDataset | MultiLeRobotData
         # TODO (aliberts): add 'episodes' arg from config after removing hydra
         dataset = LeRobotDataset(
             cfg.dataset_repo_id,
+            cfg.dataset_root,
             delta_timestamps=cfg.training.get("delta_timestamps"),
             image_transforms=image_transforms,
             video_backend=cfg.video_backend,
+            local_files_only=isinstance(cfg.dataset_root, str),
         )
     else:
         dataset = MultiLeRobotDataset(
             cfg.dataset_repo_id,
+            cfg.dataset_root,
             delta_timestamps=cfg.training.get("delta_timestamps"),
             image_transforms=image_transforms,
             video_backend=cfg.video_backend,
+            local_files_only=isinstance(cfg.dataset_root, str),
         )
 
     if cfg.get("override_dataset_stats"):
