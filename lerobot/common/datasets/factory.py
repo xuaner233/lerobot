@@ -18,7 +18,7 @@ import logging
 import torch
 from omegaconf import ListConfig, OmegaConf
 
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset, MultiLeRobotDataset
+from lerobot.common.datasets.lerobot_dataset import LEROBOT_HOME, LeRobotDataset, MultiLeRobotDataset
 from lerobot.common.datasets.transforms import get_image_transforms
 
 
@@ -94,20 +94,18 @@ def make_dataset(cfg, split: str = "train") -> LeRobotDataset | MultiLeRobotData
         # TODO (aliberts): add 'episodes' arg from config after removing hydra
         dataset = LeRobotDataset(
             cfg.dataset_repo_id,
-            cfg.dataset_root,
             delta_timestamps=cfg.training.get("delta_timestamps"),
             image_transforms=image_transforms,
             video_backend=cfg.video_backend,
-            local_files_only=isinstance(cfg.dataset_root, str),
+            local_files_only=(LEROBOT_HOME / cfg.dataset_repo_id).exists(),
         )
     else:
         dataset = MultiLeRobotDataset(
             cfg.dataset_repo_id,
-            cfg.dataset_root,
             delta_timestamps=cfg.training.get("delta_timestamps"),
             image_transforms=image_transforms,
             video_backend=cfg.video_backend,
-            local_files_only=isinstance(cfg.dataset_root, str),
+            local_files_only=(LEROBOT_HOME / cfg.dataset_repo_id).exists(),
         )
 
     if cfg.get("override_dataset_stats"):

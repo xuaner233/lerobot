@@ -15,7 +15,6 @@
 
 seed: 1000
 dataset_repo_id: xuaner233/so100_pick_and_place
-dataset_root: dataset/xuaner233/so100_pick_and_place
 
 # override_dataset_stats:
 #   observation.images.top:
