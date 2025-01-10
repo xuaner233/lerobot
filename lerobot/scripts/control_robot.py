@@ -283,6 +283,18 @@ def record(
         #     task = input("Enter your task description: ")
 
         log_say(f"Recording episode {dataset.num_episodes}", play_sounds)
+        time.sleep(3)
+        log_say("5", play_sounds)
+        time.sleep(1)
+        log_say("4", play_sounds)
+        time.sleep(1)
+        log_say("3", play_sounds)
+        time.sleep(1)
+        log_say("2", play_sounds)
+        time.sleep(1)
+        log_say("1", play_sounds)
+        time.sleep(1)
+        log_say("Recording...", play_sounds)
         record_episode(
             dataset=dataset,
             robot=robot,
@@ -300,7 +312,7 @@ def record(
         # TODO(rcadene): add an option to enable teleoperation during reset
         # Skip reset for the last episode to be recorded
         if not events["stop_recording"] and (
-            (dataset.num_episodes < num_episodes - 1) or events["rerecord_episode"]
+            (recorded_episodes < num_episodes - 1) or events["rerecord_episode"]
         ):
             log_say("Reset the environment", play_sounds)
             reset_environment(robot, events, reset_time_s)
@@ -313,6 +325,7 @@ def record(
             continue
 
         dataset.save_episode(task)
+        log_say(f"Saved episode {recorded_episodes}, total {dataset.num_episodes}", play_sounds)
         recorded_episodes += 1
 
         if events["stop_recording"]:
