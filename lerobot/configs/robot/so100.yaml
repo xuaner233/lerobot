@@ -43,21 +43,20 @@ follower_arms:
 
 cameras:
   top:
-    _target_: lerobot.common.robot_devices.cameras.intelrealsense.IntelRealSenseCamera
-    # name: Intel RealSense D435I
-    serial_number: 135122074394
+    _target_: lerobot.common.robot_devices.cameras.opencv.OpenCVCamera
+    camera_index: 0
     fps: 30
     width: 640
     height: 480
   lower:
     _target_: lerobot.common.robot_devices.cameras.opencv.OpenCVCamera
-    camera_index: 6
+    camera_index: 2
     fps: 30
     width: 640
     height: 480
-  jaw:
-    _target_: lerobot.common.robot_devices.cameras.opencv.OpenCVCamera
-    camera_index: 8
-    fps: 30
-    width: 640
-    height: 480
+  # jaw:
+  #   _target_: lerobot.common.robot_devices.cameras.opencv.OpenCVCamera
+  #   camera_index: 8
+  #   fps: 30
+  #   width: 640
+  #   height: 480

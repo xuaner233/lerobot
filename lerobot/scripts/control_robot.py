@@ -282,12 +282,8 @@ def record(
         # if multi_task:
         #     task = input("Enter your task description: ")
 
-        log_say(f"Recording episode {dataset.num_episodes}", play_sounds)
+        log_say(f"Recording episode {recorded_episodes + 1} out of {num_episodes}", play_sounds)
         time.sleep(3)
-        log_say("5", play_sounds)
-        time.sleep(1)
-        log_say("4", play_sounds)
-        time.sleep(1)
         log_say("3", play_sounds)
         time.sleep(1)
         log_say("2", play_sounds)
