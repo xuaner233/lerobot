@@ -9,6 +9,7 @@ from lerobot.common.robot_devices.robots.configs import (
     MossRobotConfig,
     RobotConfig,
     So100RobotConfig,
+    So100BimanualRobotConfig,
     StretchRobotConfig,
 )
 
@@ -44,6 +45,8 @@ def make_robot_config(robot_type: str, **kwargs) -> RobotConfig:
         return MossRobotConfig(**kwargs)
     elif robot_type == "so100":
         return So100RobotConfig(**kwargs)
+    elif robot_type == "so100_bimanual":
+        return So100BimanualRobotConfig(**kwargs)
     elif robot_type == "stretch":
         return StretchRobotConfig(**kwargs)
     elif robot_type == "lekiwi":
