@@ -20,6 +20,7 @@
 import logging
 import time
 import traceback
+import tqdm
 from contextlib import nullcontext
 from copy import copy
 from functools import cache
@@ -243,44 +244,43 @@ def control_loop(
 
     timestamp = 0
     start_episode_t = time.perf_counter()
-    while timestamp < control_time_s:
-        start_loop_t = time.perf_counter()
+    with tqdm.tqdm(total=control_time_s, desc="Recording") as pbar:
+      while timestamp < control_time_s:
+          start_loop_t = time.perf_counter()
 
-        if teleoperate:
-            observation, action = robot.teleop_step(record_data=True)
-        else:
-            observation = robot.capture_observation()
+          if teleoperate:
+              observation, action = robot.teleop_step(record_data=True)
+          else:
+              observation = robot.capture_observation()
 
-            if policy is not None:
-                pred_action = predict_action(
-                    observation, policy, get_safe_torch_device(policy.config.device), policy.config.use_amp
-                )
-                # Action can eventually be clipped using `max_relative_target`,
-                # so action actually sent is saved in the dataset.
-                action = robot.send_action(pred_action)
-                action = {"action": action}
+              if policy is not None:
+                  pred_action = predict_action(
+                      observation, policy, get_safe_torch_device(policy.config.device), policy.config.use_amp
+                  )
+                  # Action can eventually be clipped using `max_relative_target`,
+                  # so action actually sent is saved in the dataset.
+                  action = robot.send_action(pred_action)
+                  action = {"action": action}
 
-        if dataset is not None:
-            frame = {**observation, **action, "task": single_task}
-            dataset.add_frame(frame)
+          if dataset is not None:
+              frame = {**observation, **action, "task": single_task}
+              dataset.add_frame(frame)
 
-        if display_cameras and not is_headless():
-            image_keys = [key for key in observation if "image" in key]
-            for key in image_keys:
-                cv2.imshow(key, cv2.cvtColor(observation[key].numpy(), cv2.COLOR_RGB2BGR))
-            cv2.waitKey(1)
+          if display_cameras and not is_headless():
+              image_keys = [key for key in observation if "image" in key]
+              for key in image_keys:
+                  cv2.imshow(key, cv2.cvtColor(observation[key].numpy(), cv2.COLOR_RGB2BGR))
+              cv2.waitKey(1)
 
-        if fps is not None:
             dt_s = time.perf_counter() - start_loop_t
-            busy_wait(1 / fps - dt_s)
+            pbar.update(dt_s)
+            if (timestamp % 5 < 0.01):
+                log_control_info(robot, dt_s, fps=fps)
 
-        dt_s = time.perf_counter() - start_loop_t
-        log_control_info(robot, dt_s, fps=fps)
-
-        timestamp = time.perf_counter() - start_episode_t
-        if events["exit_early"]:
-            events["exit_early"] = False
-            break
+            timestamp = time.perf_counter() - start_episode_t
+            if events["exit_early"]:
+                events["exit_early"] = False
+                break
 
 
 def reset_environment(robot, events, reset_time_s, fps):
