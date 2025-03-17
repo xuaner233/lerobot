@@ -20,6 +20,7 @@
 import logging
 import time
 import traceback
+import tqdm
 from contextlib import nullcontext
 from copy import copy
 from functools import cache
@@ -243,6 +244,7 @@ def control_loop(
 
     timestamp = 0
     start_episode_t = time.perf_counter()
+    pbar = tqdm.tqdm(total=control_time_s, desc="Recording")
     while timestamp < control_time_s:
         start_loop_t = time.perf_counter()
 
@@ -281,12 +283,17 @@ def control_loop(
             busy_wait(1 / fps - dt_s)
 
         dt_s = time.perf_counter() - start_loop_t
-        log_control_info(robot, dt_s, fps=fps)
+        pbar.update(dt_s)
+        # reduce control info log
+        if (timestamp % 5 < dt_s):
+            log_control_info(robot, dt_s, fps=fps)
 
         timestamp = time.perf_counter() - start_episode_t
         if events["exit_early"]:
             events["exit_early"] = False
             break
+
+    pbar.close()
 
 
 def reset_environment(robot, events, reset_time_s, fps):
