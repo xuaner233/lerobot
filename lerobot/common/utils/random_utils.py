@@ -24,6 +24,7 @@ from safetensors.torch import load_file, save_file
 
 from lerobot.common.constants import RNG_STATE
 from lerobot.common.datasets.utils import flatten_dict, unflatten_dict
+from lerobot.common.utils.utils import is_launched_with_accelerate
 
 
 def serialize_python_rng_state() -> dict[str, torch.Tensor]:
@@ -170,6 +171,10 @@ def set_seed(seed) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+    if is_launched_with_accelerate():
+        from accelerate.utils import set_seed
+
+        set_seed(seed)
 
 
 @contextmanager

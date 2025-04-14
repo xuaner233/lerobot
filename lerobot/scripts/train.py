@@ -17,7 +17,7 @@ import logging
 import time
 from contextlib import nullcontext
 from pprint import pformat
-from typing import Any
+from typing import Any, Callable
 
 import torch
 from termcolor import colored
@@ -46,6 +46,7 @@ from lerobot.common.utils.utils import (
     get_safe_torch_device,
     has_method,
     init_logging,
+    is_launched_with_accelerate,
 )
 from lerobot.common.utils.wandb_utils import WandBLogger
 from lerobot.configs import parser
@@ -63,17 +64,29 @@ def update_policy(
     lr_scheduler=None,
     use_amp: bool = False,
     lock=None,
+    accelerator: Callable = None,
 ) -> tuple[MetricsTracker, dict]:
     start_time = time.perf_counter()
     device = get_device_from_parameters(policy)
     policy.train()
-    with torch.autocast(device_type=device.type) if use_amp else nullcontext():
+    with torch.autocast(device_type=device.type) if use_amp and accelerator is None else nullcontext():
         loss, output_dict = policy.forward(batch)
         # TODO(rcadene): policy.unnormalize_outputs(out_dict)
-    grad_scaler.scale(loss).backward()
 
-    # Unscale the gradient of the optimizer's assigned params in-place **prior to gradient clipping**.
-    grad_scaler.unscale_(optimizer)
+    if accelerator:
+        accelerator.backward(loss)
+        accelerator.unscale_gradients(optimizer=optimizer)
+
+        # grad_norm = torch.nn.utils.clip_grad_norm_(
+        #     policy.parameters(),
+        #     grad_clip_norm,
+        #     error_if_nonfinite=False,
+        # )
+        # optimizer.step()
+    else:
+        grad_scaler.scale(loss).backward()
+        # Unscale the gradient of the optimizer's assigned params in-place **prior to gradient clipping**.
+        grad_scaler.unscale_(optimizer)
 
     grad_norm = torch.nn.utils.clip_grad_norm_(
         policy.parameters(),
@@ -94,9 +107,10 @@ def update_policy(
     if lr_scheduler is not None:
         lr_scheduler.step()
 
-    if has_method(policy, "update"):
+    policy_model = accelerator.unwrap_model(policy) if accelerator else policy
+    if has_method(policy_model, "update"):
         # To possibly update an internal buffer (for instance an Exponential Moving Average like in TDMPC).
-        policy.update()
+        policy_model.update()
 
     train_metrics.loss = loss.item()
     train_metrics.grad_norm = grad_norm.item()
@@ -106,9 +120,14 @@ def update_policy(
 
 
 @parser.wrap()
-def train(cfg: TrainPipelineConfig):
+def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
     cfg.validate()
     logging.info(pformat(cfg.to_dict()))
+
+    # TODO: use accelerator for wandb logger
+    if accelerator and not accelerator.is_main_process:
+        # Disable logging on non-main processes.
+        cfg.wandb.enable = False
 
     if cfg.wandb.enable and cfg.wandb.project:
         wandb_logger = WandBLogger(cfg)
@@ -120,7 +139,7 @@ def train(cfg: TrainPipelineConfig):
         set_seed(cfg.seed)
 
     # Check device is available
-    device = get_safe_torch_device(cfg.policy.device, log=True)
+    device = get_safe_torch_device(cfg.policy.device, log=True, accelerator=accelerator)
     torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
 
@@ -141,6 +160,7 @@ def train(cfg: TrainPipelineConfig):
         ds_meta=dataset.meta,
     )
 
+    policy.to(device)
     logging.info("Creating optimizer and scheduler")
     optimizer, lr_scheduler = make_optimizer_and_scheduler(cfg, policy)
     grad_scaler = GradScaler(device.type, enabled=cfg.policy.use_amp)
@@ -183,6 +203,10 @@ def train(cfg: TrainPipelineConfig):
         pin_memory=device.type != "cpu",
         drop_last=False,
     )
+    if accelerator:
+        policy, optimizer, dataloader, lr_scheduler = accelerator.prepare(
+            policy, optimizer, dataloader, lr_scheduler
+        )
     dl_iter = cycle(dataloader)
 
     policy.train()
@@ -196,7 +220,12 @@ def train(cfg: TrainPipelineConfig):
     }
 
     train_tracker = MetricsTracker(
-        cfg.batch_size, dataset.num_frames, dataset.num_episodes, train_metrics, initial_step=step
+        cfg.batch_size,
+        dataset.num_frames,
+        dataset.num_episodes,
+        train_metrics,
+        initial_step=step,
+        accelerator=accelerator,
     )
 
     logging.info("Start offline training on a fixed dataset")
@@ -218,6 +247,7 @@ def train(cfg: TrainPipelineConfig):
             grad_scaler=grad_scaler,
             lr_scheduler=lr_scheduler,
             use_amp=cfg.policy.use_amp,
+            accelerator=accelerator,
         )
 
         # Note: eval and checkpoint happens *after* the `step`th training update has completed, so we
@@ -227,6 +257,15 @@ def train(cfg: TrainPipelineConfig):
         is_log_step = cfg.log_freq > 0 and step % cfg.log_freq == 0
         is_saving_step = step % cfg.save_freq == 0 or step == cfg.steps
         is_eval_step = cfg.eval_freq > 0 and step % cfg.eval_freq == 0
+
+        if accelerator and (is_log_step or is_saving_step or is_eval_step):
+            # sync model for log/save/eval
+            accelerator.wait_for_everyone()
+            # only do log/save/eval on main process
+            if not accelerator.is_main_process:
+                is_log_step = False
+                is_saving_step = False
+                is_eval_step = False
 
         if is_log_step:
             logging.info(train_tracker)
@@ -240,7 +279,14 @@ def train(cfg: TrainPipelineConfig):
         if cfg.save_checkpoint and is_saving_step:
             logging.info(f"Checkpoint policy after step {step}")
             checkpoint_dir = get_step_checkpoint_dir(cfg.output_dir, cfg.steps, step)
-            save_checkpoint(checkpoint_dir, step, cfg, policy, optimizer, lr_scheduler)
+            save_checkpoint(
+                checkpoint_dir,
+                step,
+                cfg,
+                policy if not accelerator else accelerator.unwrap_model(policy),
+                optimizer,
+                lr_scheduler,
+            )
             update_last_checkpoint(checkpoint_dir)
             if wandb_logger:
                 wandb_logger.log_policy(checkpoint_dir)
@@ -250,11 +296,11 @@ def train(cfg: TrainPipelineConfig):
             logging.info(f"Eval policy at step {step}")
             with (
                 torch.no_grad(),
-                torch.autocast(device_type=device.type) if cfg.policy.use_amp else nullcontext(),
+                torch.autocast(device_type=device.type) if cfg.use_amp and not accelerator else nullcontext(),
             ):
                 eval_info = eval_policy(
                     eval_env,
-                    policy,
+                    policy if not accelerator else accelerator.unwrap_model(policy),
                     cfg.eval.n_episodes,
                     videos_dir=cfg.output_dir / "eval" / f"videos_step_{step_id}",
                     max_episodes_rendered=4,
@@ -285,4 +331,17 @@ def train(cfg: TrainPipelineConfig):
 
 if __name__ == "__main__":
     init_logging()
-    train()
+    if is_launched_with_accelerate():
+        import accelerate
+        kwargs = accelerate.DistributedDataParallelKwargs(find_unused_parameters=True)
+
+        # We set step_scheduler_with_optimizer False to prevent accelerate from
+        # adjusting the lr_scheduler steps based on the num_processes
+        accelerator = accelerate.Accelerator(
+            step_scheduler_with_optimizer=False,
+            kwargs_handlers=[kwargs]
+        )
+        train(accelerator=accelerator)
+    else:
+
+        train()
