@@ -798,7 +798,7 @@ class PI0FAST(nn.Module):
                 print(f"Error decoding tokens: {e}")
                 print(f"Tokens: {token}")
                 decoded_dct_coeff = np.zeros((self.time_horizon, self.action_dim))
-            decoded_actions.append(idct(decoded_dct_coeff / self.fast_tokenizer.scale, axis=0, norm="ortho"))
+            decoded_actions.append(idct(decoded_dct_coeff / self.fast_tokenizer.scale, axis=0, norm="ortho").astype(np.float32))
         return np.stack(decoded_actions)
 
     def extract_actions(self, tokens: torch.Tensor, action_horizon: int, action_dim: int) -> torch.Tensor:
