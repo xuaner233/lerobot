@@ -26,6 +26,12 @@ from lerobot.configs.policies import PreTrainedConfig
 class ControlConfig(draccus.ChoiceRegistry):
     pass
 
+@ControlConfig.register_subclass("rest")
+@dataclass
+class RestControlConfig(ControlConfig):
+    arms: list[str] | None = None
+    # Display all cameras on screen
+    display_data: bool = False
 
 @ControlConfig.register_subclass("calibrate")
 @dataclass
