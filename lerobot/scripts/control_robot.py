@@ -146,6 +146,7 @@ import rerun as rr
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.common.policies.factory import make_policy
 from lerobot.common.robot_devices.control_configs import (
+    RestControlConfig,
     CalibrateControlConfig,
     ControlConfig,
     ControlPipelineConfig,
@@ -367,6 +368,21 @@ def replay(
         dt_s = time.perf_counter() - start_episode_t
         log_control_info(robot, dt_s, fps=cfg.fps)
 
+@safe_disconnect
+def rest(robot: Robot):
+    if not robot.is_connected:
+        robot.connect()
+
+    # We assume that at connection time, arms are in a rest position, and torque can
+    # be safely disabled to run calibration and/or set robot preset configurations.
+    logging.info("Deactivating torque on robot arms.")
+    for name in robot.follower_arms:
+        robot.follower_arms[name].write("Torque_Enable", 0)
+    for name in robot.leader_arms:
+        robot.leader_arms[name].write("Torque_Enable", 0)
+
+    robot.disconnect()
+
 
 def _init_rerun(control_config: ControlConfig, session_name: str = "lerobot_control_loop") -> None:
     """Initializes the Rerun SDK for visualizing the control loop.
@@ -413,6 +429,8 @@ def control_robot(cfg: ControlPipelineConfig):
 
     if isinstance(cfg.control, CalibrateControlConfig):
         calibrate(robot, cfg.control)
+    elif isinstance(cfg.control, RestControlConfig):
+        rest(robot)
     elif isinstance(cfg.control, TeleoperateControlConfig):
         _init_rerun(control_config=cfg.control, session_name="lerobot_control_loop_teleop")
         teleoperate(robot, cfg.control)
