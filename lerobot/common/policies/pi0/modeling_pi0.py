@@ -295,9 +295,33 @@ class PI0Policy(PreTrainedPolicy):
             if self.config.adapt_to_pi_aloha:
                 actions = self._pi_aloha_encode_actions(actions)
 
+            # smooth the action flow
+            def smooth_conv(actions: Tensor, window_size):
+                conv = torch.nn.Conv1d(
+                    actions.shape[1],
+                    actions.shape[1],
+                    window_size,
+                    1,
+                    padding=(window_size - 1) // 2,
+                    groups=actions.shape[1],
+                    bias=False,
+                    padding_mode='replicate',
+                    device=actions.device)
+                conv.weight.data.fill_(1.0 / window_size)
+                return conv(actions)
+            smooth_actions = smooth_conv(actions.transpose(1, 2), 3)
+            #smooth_actions = smooth_conv(smooth_actions, 3)
+            smooth_actions = smooth_actions.transpose(1, 2)
+
             # `self.model.forward` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
             # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
-            self._action_queue.extend(actions.transpose(0, 1))
+            smooth_actions = smooth_actions.transpose(0, 1)
+
+            # sample actions 50 -> 25 for speed up
+            #indices = torch.arange(0, self.config.n_action_steps // 2 * 2, 2)
+            #sampled_actions = smooth_actions[indices]
+
+            self._action_queue.extend(smooth_actions)
         return self._action_queue.popleft()
 
     def forward(self, batch: dict[str, Tensor], noise=None, time=None) -> tuple[Tensor, dict[str, Tensor]]:
